@@ -56,7 +56,9 @@ ENABLE_PRIVILEGED_INTENTS=false
 python bot.py
 ```
 
-Web UI (в отдельном терминале):
+Web UI теперь поднимается автоматически вместе с ботом (в том же процессе).
+
+При необходимости можно запустить только Web UI отдельно:
 
 ```bash
 python admin_panel.py
