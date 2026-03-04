@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Discord Bot Admin</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { font-family: Inter, system-ui, sans-serif; background:#0f172a; color:#e2e8f0; margin:0; }
+    .container { max-width: 980px; margin: 0 auto; padding: 24px; }
+    .card { background:#1e293b; border:1px solid #334155; border-radius:12px; padding:16px; margin-bottom:16px; }
+    h1,h2 { margin:0 0 12px; }
+    .grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(220px,1fr)); gap:10px; }
+    .stat { background:#0b1220; border-radius:10px; padding:10px; }
+    .stat-label { color:#94a3b8; font-size:12px; }
+    .stat-value { font-size:16px; font-weight:700; margin-top:4px; }
+    input, textarea, button { width:100%; border-radius:8px; border:1px solid #334155; background:#0b1220; color:#e2e8f0; padding:10px; }
+    textarea { min-height:100px; resize:vertical; }
+    button { cursor:pointer; background:#2563eb; border:none; font-weight:600; margin-top:8px; }
+    .row { display:grid; grid-template-columns: 1fr 2fr; gap:10px; }
+    .notice { font-size:13px; color:#93c5fd; min-height:18px; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1>Discord Bot Web Admin</h1>
+
+  <div class="card">
+    <h2>Runtime status</h2>
+    <div class="grid">
+      <div class="stat"><div class="stat-label">Instance</div><div class="stat-value">{{ bot_instance_name }}</div></div>
+      <div class="stat"><div class="stat-label">PID</div><div class="stat-value">{{ pid }}</div></div>
+      <div class="stat"><div class="stat-label">Connected</div><div class="stat-value">{{ connected }}</div></div>
+      <div class="stat"><div class="stat-label">Guilds</div><div class="stat-value">{{ guild_count }}</div></div>
+      <div class="stat"><div class="stat-label">Commands handled</div><div class="stat-value">{{ commands_handled }}</div></div>
+      <div class="stat"><div class="stat-label">Last ready</div><div class="stat-value">{{ last_ready_at }}</div></div>
+    </div>
+    <p><b>Last error:</b> {{ last_error }}</p>
+  </div>
+
+  <div class="card">
+    <h2>Send message to channel</h2>
+    <div class="row">
+      <input id="channelId" placeholder="Channel ID (numeric)" />
+      <textarea id="message" placeholder="Message text"></textarea>
+    </div>
+    <button onclick="sendMessage()">Send message</button>
+    <div id="sendNotice" class="notice"></div>
+  </div>
+
+  <div class="card">
+    <h2>Update bot presence</h2>
+    <input id="presenceText" placeholder="e.g. Monitoring server health" />
+    <button onclick="updatePresence()">Update status</button>
+    <div id="presenceNotice" class="notice"></div>
+  </div>
+</div>
+
+<script>
+  async function callApi(url, payload) {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      throw new Error(data.error || 'Request failed');
+    }
+    return data;
+  }
+
+  async function sendMessage() {
+    const channelId = document.getElementById('channelId').value;
+    const message = document.getElementById('message').value;
+    const notice = document.getElementById('sendNotice');
+    try {
+      await callApi('/api/send-message', { channel_id: channelId, message });
+      notice.textContent = 'Message sent successfully';
+    } catch (e) {
+      notice.textContent = 'Error: ' + e.message;
+    }
+  }
+
+  async function updatePresence() {
+    const statusText = document.getElementById('presenceText').value;
+    const notice = document.getElementById('presenceNotice');
+    try {
+      await callApi('/api/presence', { status_text: statusText });
+      notice.textContent = 'Presence updated';
+    } catch (e) {
+      notice.textContent = 'Error: ' + e.message;
+    }
+  }
+</script>
+</body>
+</html>

@@ -1,5 +1,6 @@
 import os
 import time
+from dataclasses import dataclass
 from typing import Dict, Optional, Tuple
 from urllib.parse import quote, unquote, urlsplit, urlunsplit
 
@@ -8,14 +9,59 @@ import discord
 from discord.ext import commands
 from dotenv import load_dotenv
 
+from admin_panel import AdminPanelServer
+
 # Load environment variables from .env file
 load_dotenv()
+
+
+@dataclass
+class RuntimeState:
+    bot_instance_name: str
+    pid: int
+    start_time: float
+    connected: bool = False
+    guild_count: int = 0
+    commands_handled: int = 0
+    last_ready_at: Optional[float] = None
+    last_error: Optional[str] = None
+    last_admin_action: Optional[str] = None
+
+    def snapshot(self) -> Dict:
+        return {
+            'bot_instance_name': self.bot_instance_name,
+            'pid': self.pid,
+            'start_time': self.start_time,
+            'connected': self.connected,
+            'guild_count': self.guild_count,
+            'commands_handled': self.commands_handled,
+            'last_ready_at': self.last_ready_at,
+            'last_error': self.last_error,
+            'last_admin_action': self.last_admin_action,
+        }
+
+    def set_last_error(self, error_message: str) -> None:
+        self.last_error = error_message
+
+    def register_admin_action(self, action_name: str) -> None:
+        self.last_admin_action = action_name
+
 
 # Get the bot token from environment variables
 TOKEN = os.getenv('DISCORD_BOT_TOKEN')
 BOT_INSTANCE_NAME = os.getenv('BOT_INSTANCE_NAME', 'default-instance')
 LOCK_FILE_PATH = os.getenv('BOT_LOCK_FILE_PATH', '/tmp/discord_bot_single_instance.lock')
 ENABLE_SINGLE_INSTANCE_LOCK = os.getenv('ENABLE_SINGLE_INSTANCE_LOCK', 'false').strip().lower() == 'true'
+WEB_ADMIN_ENABLED = os.getenv('ENABLE_WEB_ADMIN_PANEL', 'true').strip().lower() == 'true'
+WEB_ADMIN_HOST = os.getenv('WEB_ADMIN_HOST', '0.0.0.0')
+WEB_ADMIN_PORT = int(os.getenv('WEB_ADMIN_PORT', '8080'))
+
+runtime_state = RuntimeState(
+    bot_instance_name=BOT_INSTANCE_NAME,
+    pid=os.getpid(),
+    start_time=time.time(),
+)
+admin_panel_server = None
 
 lock_file_handle = None
 
@@ -115,13 +161,7 @@ def get_proxy_options(proxy_url: Optional[str]) -> Dict:
     )
 
     if scheme in SOCKS_PROXY_SCHEMES:
-        try:
-            from aiohttp_socks import ProxyConnector
-        except ImportError as exc:
-            raise RuntimeError(
-                "SOCKS proxy configured but 'aiohttp-socks' is not installed. "
-                "Install dependencies again with `pip install -r requirements.txt`."
-            ) from exc
+        from aiohttp_socks import ProxyConnector
 
         return {
             'connector': ProxyConnector.from_url(normalized_proxy_url),
@@ -179,10 +219,7 @@ def acquire_single_instance_lock() -> None:
     if not ENABLE_SINGLE_INSTANCE_LOCK:
         return
 
-    try:
-        import fcntl
-    except ImportError as exc:
-        raise RuntimeError('ENABLE_SINGLE_INSTANCE_LOCK=true but fcntl is unavailable on this platform.') from exc
+    import fcntl
 
     lock_file_handle = open(LOCK_FILE_PATH, 'a+', encoding='utf-8')
 
@@ -201,6 +238,24 @@ def acquire_single_instance_lock() -> None:
     lock_file_handle.flush()
 
 
+async def start_web_admin() -> None:
+    global admin_panel_server
+
+    if not WEB_ADMIN_ENABLED or admin_panel_server is not None:
+        return
+
+    admin_panel_server = AdminPanelServer(
+        bot=bot,
+        runtime_state=runtime_state,
+        username=os.getenv('ADMIN_USERNAME', 'admin'),
+        password=os.getenv('ADMIN_PASSWORD', 'admin'),
+        host=WEB_ADMIN_HOST,
+        port=WEB_ADMIN_PORT,
+    )
+    await admin_panel_server.start()
+    print(f"Web admin panel available on http://{WEB_ADMIN_HOST}:{WEB_ADMIN_PORT}")
+
+
 acquire_single_instance_lock()
 print(f"Starting bot instance '{BOT_INSTANCE_NAME}' with PID {os.getpid()}")
 
@@ -211,12 +266,22 @@ async def on_ready():
     ready_time = time.strftime('%Y-%m-%d %H:%M:%S %z')
     bot_user_id = bot.user.id if bot.user else 'unknown'
 
+    runtime_state.connected = True
+    await start_web_admin()
+    runtime_state.guild_count = len(bot.guilds)
+    runtime_state.last_ready_at = time.time()
+
     print(
         f"[{BOT_INSTANCE_NAME}] on_ready at {ready_time}: "
         f"pid={os.getpid()} bot_user_id={bot_user_id} guild_count={len(bot.guilds)}"
     )
     print(f'{bot.user} has connected to Discord!')
     print(f'Bot is in {len(bot.guilds)} guild(s)')
+
+
+@bot.event
+async def on_command(ctx):
+    runtime_state.commands_handled += 1
 
 
 @bot.command(name='hello')
@@ -242,6 +307,7 @@ async def ping_command(ctx):
 @bot.event
 async def on_command_error(ctx, error):
     """Handle command errors gracefully"""
+    runtime_state.set_last_error(str(error))
     if isinstance(error, commands.CommandNotFound):
         await ctx.send("Sorry, I didn't understand that command. Try `/hello` or `/ping`.")
     else:

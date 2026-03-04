@@ -8,6 +8,7 @@ A basic Discord bot that responds with "Hello World" when triggered by a specifi
 - Simple `/ping` command for testing bot responsiveness
 - Clean, well-documented code structure
 - Easy setup and deployment
+- Built-in Web Admin panel for monitoring and quick bot actions
 
 ## Requirements
 
@@ -73,6 +74,35 @@ Responds with "Hello World" message.
 Simple ping command to test bot responsiveness.
 
 **Usage:** `/ping`
+
+
+## Web Admin Panel
+
+The bot now includes an embedded Web Admin panel (aiohttp) that runs in parallel with the Discord process.
+
+### What you can do
+- View runtime status: instance, PID, connection state, guild count, handled commands, last error
+- Send a message to a Discord channel by channel ID
+- Update bot presence text
+
+### Security
+The panel is protected with HTTP Basic Authentication. Configure credentials in `.env`:
+
+```env
+ENABLE_WEB_ADMIN_PANEL=true
+WEB_ADMIN_HOST=0.0.0.0
+WEB_ADMIN_PORT=8080
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=change_me
+```
+
+After bot startup, open:
+
+```
+http://localhost:8080
+```
+
+For Docker Compose, port `8080` is already published by default.
 
 ## Troubleshooting
 

@@ -4,11 +4,6 @@ FROM python:3.11-slim
 # Set working directory in container
 WORKDIR /app
 
-# Install system dependencies if needed
-# RUN apt-get update && apt-get install -y \
-#     # Add any system dependencies here if required \
-#     && rm -rf /var/lib/apt/lists/*
-
 # Copy requirements file
 COPY requirements.txt .
 
@@ -16,14 +11,13 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
-COPY bot.py .
-COPY .env.example .env.example
+COPY . .
 
 # Create a placeholder .env file (will be overridden by volume mount or environment)
 RUN touch .env
 
-# Expose any ports if needed (not required for Discord bot)
-# EXPOSE 8080
+# Web admin panel port
+EXPOSE 8080
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
