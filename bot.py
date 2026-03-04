@@ -1,4 +1,5 @@
 import os
+import time
 from typing import Dict, Optional, Tuple
 from urllib.parse import quote, unquote, urlsplit, urlunsplit
 
@@ -12,6 +13,11 @@ load_dotenv()
 
 # Get the bot token from environment variables
 TOKEN = os.getenv('DISCORD_BOT_TOKEN')
+BOT_INSTANCE_NAME = os.getenv('BOT_INSTANCE_NAME', 'default-instance')
+LOCK_FILE_PATH = os.getenv('BOT_LOCK_FILE_PATH', '/tmp/discord_bot_single_instance.lock')
+ENABLE_SINGLE_INSTANCE_LOCK = os.getenv('ENABLE_SINGLE_INSTANCE_LOCK', 'false').strip().lower() == 'true'
+
+lock_file_handle = None
 
 if not TOKEN:
     print("Error: DISCORD_BOT_TOKEN not found in environment variables.")
@@ -166,9 +172,49 @@ bot_options = {k: v for k, v in proxy_options.items() if k != 'proxy_display'}
 bot = commands.Bot(command_prefix='/', intents=intents, **bot_options)
 
 
+def acquire_single_instance_lock() -> None:
+    """Acquire a non-blocking file lock to prevent duplicate bot instances."""
+    global lock_file_handle
+
+    if not ENABLE_SINGLE_INSTANCE_LOCK:
+        return
+
+    try:
+        import fcntl
+    except ImportError as exc:
+        raise RuntimeError('ENABLE_SINGLE_INSTANCE_LOCK=true but fcntl is unavailable on this platform.') from exc
+
+    lock_file_handle = open(LOCK_FILE_PATH, 'a+', encoding='utf-8')
+
+    try:
+        fcntl.flock(lock_file_handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        print(
+            f"[{BOT_INSTANCE_NAME}] Another bot instance is already running for lock '{LOCK_FILE_PATH}'. "
+            "Exiting to avoid duplicate replies."
+        )
+        exit(1)
+
+    lock_file_handle.seek(0)
+    lock_file_handle.truncate()
+    lock_file_handle.write(f"pid={os.getpid()} instance={BOT_INSTANCE_NAME} started_at={int(time.time())}\n")
+    lock_file_handle.flush()
+
+
+acquire_single_instance_lock()
+print(f"Starting bot instance '{BOT_INSTANCE_NAME}' with PID {os.getpid()}")
+
+
 @bot.event
 async def on_ready():
     """Event handler for when the bot connects to Discord"""
+    ready_time = time.strftime('%Y-%m-%d %H:%M:%S %z')
+    bot_user_id = bot.user.id if bot.user else 'unknown'
+
+    print(
+        f"[{BOT_INSTANCE_NAME}] on_ready at {ready_time}: "
+        f"pid={os.getpid()} bot_user_id={bot_user_id} guild_count={len(bot.guilds)}"
+    )
     print(f'{bot.user} has connected to Discord!')
     print(f'Bot is in {len(bot.guilds)} guild(s)')
 

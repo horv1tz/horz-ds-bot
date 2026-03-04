@@ -39,6 +39,9 @@ A basic Discord bot that responds with "Hello World" when triggered by a specifi
    - Edit `.env` and replace `your_bot_token_here` with your actual bot token
    ```
    DISCORD_BOT_TOKEN=your_actual_bot_token_here
+   BOT_INSTANCE_NAME=bot-dev-1
+   # Optional: ensure only one bot process per host/container
+   ENABLE_SINGLE_INSTANCE_LOCK=true
    ```
 
 5. **Invite the bot to your server**
@@ -82,6 +85,43 @@ Simple ping command to test bot responsiveness.
 - Make sure the bot has been invited to your server with proper permissions
 - Check that the bot is online in your server's member list
 - Verify the command prefix is `/` (you can change this in `bot.py`)
+
+
+### Troubleshooting duplicate replies
+
+If the bot sends duplicate responses, the most common reason is multiple running processes using the same `DISCORD_BOT_TOKEN`.
+
+1. **Check bot startup logs**
+   - On startup and `on_ready`, the bot now logs: instance name (`BOT_INSTANCE_NAME`), PID, bot user ID, guild count, and timestamp.
+   - Compare logs from all hosts/containers and verify only one active process reports successful connection.
+
+2. **Check local processes**
+   ```bash
+   ps -ef | grep "python bot.py" | grep -v grep
+   ```
+
+3. **Check Docker containers**
+   ```bash
+   docker ps --format "table {{.Names}}\t{{.Status}}"
+   docker compose ps
+   docker compose logs -f
+   ```
+   Ensure only one bot container is running for the same token/environment.
+
+4. **Check systemd services**
+   ```bash
+   systemctl list-units --type=service | grep -i bot
+   systemctl status <your-bot-service>
+   journalctl -u <your-bot-service> -f
+   ```
+
+5. **Check CI/CD and second hosts**
+   - Verify CI is not launching temporary bot jobs with production token.
+   - Verify there is no second VM/host/container cluster using the same token.
+
+6. **Use the optional single-instance lock**
+   - Set `ENABLE_SINGLE_INSTANCE_LOCK=true` (default in `docker-compose.yml`).
+   - A second process on the same host exits with a clear message instead of connecting.
 
 ### Common errors
 - **"CommandNotFound"**: Bot didn't recognize the command. Try `/hello` or `/ping`
@@ -129,6 +169,14 @@ The bot can also be deployed using Docker for easier containerization and deploy
    ```bash
    docker-compose down
    ```
+
+
+### Single-instance deployment note
+
+When deploying with Docker Compose/systemd/CI, make sure exactly one runtime process is started per token:
+- **Docker Compose**: run a single service instance (`docker compose up -d --scale horz-ds-bot=1`).
+- **systemd**: define exactly one unit for this bot token and avoid duplicate templated units.
+- **CI/CD**: do not run long-lived bot jobs in parallel with production deployment.
 
 ### Proxy Configuration
 
