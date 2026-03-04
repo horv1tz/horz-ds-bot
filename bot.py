@@ -63,6 +63,118 @@ def has_pending_application(user_id: int) -> bool:
         ).fetchone()
     return row is not None
 
+        embed = interaction.message.embeds[0]
+        embed.color = STATUS_COLORS['accepted']
+        embed.add_field(name='Статус', value=f'Принял: {interaction.user.mention}', inline=False)
+        await interaction.message.edit(embed=embed, view=DisabledView())
+
+        guild = interaction.guild
+        if guild:
+            newbie_role_id = int(get_setting('applications_newbie_role_id', '0') or 0)
+            member = guild.get_member(row['user_id'])
+            if member and newbie_role_id:
+                role = guild.get_role(newbie_role_id)
+                if role:
+                    await member.add_roles(role, reason='Заявка одобрена')
+            if member:
+                await member.send(f'Ваша заявка одобрена! Свяжитесь с рекрутёром {interaction.user.mention}')
+            await log_action(guild, f'✅ {interaction.user.mention} одобрил заявку #{app_id}')
+
+        await interaction.response.send_message('Заявка принята.', ephemeral=True)
+
+    @discord.ui.button(label='❌ Отклонить', style=discord.ButtonStyle.danger, custom_id='app_reject')
+    async def reject(self, interaction: discord.Interaction, _: discord.ui.Button):
+        if not await self._is_allowed(interaction):
+            return
+        app_id = int(interaction.message.embeds[0].footer.text.split('|')[1].strip().replace('Application ID: ', ''))
+        await interaction.response.send_modal(RejectModal(app_id))
+
+    @discord.ui.button(label='📞 Обзвон', style=discord.ButtonStyle.secondary, custom_id='app_call')
+    async def call(self, interaction: discord.Interaction, _: discord.ui.Button):
+        if not await self._is_allowed(interaction):
+            return
+
+        recruiter_role_id = int(get_setting('applications_recruiter_role_id', '0') or 0)
+        voice_ids = get_json_setting('applications_call_voice_channel_ids', [])
+        mentions = []
+        guild = interaction.guild
+
+        if guild and recruiter_role_id:
+            recruiter_role = guild.get_role(recruiter_role_id)
+            candidates = recruiter_role.members if recruiter_role else []
+            allowed_vc = {int(v) for v in voice_ids if str(v).isdigit()}
+            for member in candidates:
+                if member.voice and member.voice.channel and member.voice.channel.id in allowed_vc:
+                    mentions.append(member.mention)
+
+        text = ' '.join(mentions) if mentions else f'<@&{recruiter_role_id}>'
+        await interaction.channel.send(f'{text}, нужен обзвон по заявке.')
+        await interaction.response.send_message('Обзвон отправлен.', ephemeral=True)
+
+
+class ReportActionView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    async def _is_allowed(self, interaction: discord.Interaction) -> bool:
+        role_id = int(get_setting('reports_reviewer_role_id', '0') or 0)
+        member = interaction.user if isinstance(interaction.user, discord.Member) else None
+        if not member:
+            return False
+        return member.guild_permissions.administrator or any(r.id == role_id for r in member.roles)
+
+    @discord.ui.button(label='✅ Принять', style=discord.ButtonStyle.success, custom_id='rep_accept')
+    async def accept(self, interaction: discord.Interaction, _: discord.ui.Button):
+        if not await self._is_allowed(interaction):
+            await interaction.response.send_message('Недостаточно прав.', ephemeral=True)
+            return
+        report_id = int(interaction.message.embeds[0].footer.text.replace('Report ID: ', ''))
+        with get_conn() as conn:
+            row = conn.execute('SELECT * FROM promotion_reports WHERE id = ?', (report_id,)).fetchone()
+            conn.execute(
+                "UPDATE promotion_reports SET status='accepted', reviewed_at=?, reviewer_id=? WHERE id=?",
+                (int(time.time()), interaction.user.id, report_id),
+            )
+        embed = interaction.message.embeds[0]
+        embed.color = STATUS_COLORS['accepted']
+        embed.add_field(name='Статус', value=f'Принял: {interaction.user.mention}', inline=False)
+        await interaction.message.edit(embed=embed, view=DisabledView())
+        member = interaction.guild.get_member(row['user_id']) if interaction.guild else None
+        if member:
+            await member.send('Ваш отчёт на повышение одобрен!')
+        await interaction.response.send_message('Отчёт принят.', ephemeral=True)
+
+    @discord.ui.button(label='❌ Отклонить', style=discord.ButtonStyle.danger, custom_id='rep_reject')
+    async def reject(self, interaction: discord.Interaction, _: discord.ui.Button):
+        if not await self._is_allowed(interaction):
+            await interaction.response.send_message('Недостаточно прав.', ephemeral=True)
+            return
+        report_id = int(interaction.message.embeds[0].footer.text.replace('Report ID: ', ''))
+        await interaction.response.send_modal(ReportRejectModal(report_id))
+
+
+class DisabledView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+        self.add_item(discord.ui.Button(label='Обработано', style=discord.ButtonStyle.secondary, disabled=True))
+
+
+class RejectModal(discord.ui.Modal, title='Причина отказа'):
+    reason = discord.ui.TextInput(label='Причина отказа', max_length=300, required=True, style=discord.TextStyle.paragraph)
+
+    def __init__(self, app_id: int):
+        super().__init__()
+        self.app_id = app_id
+
+    async def on_submit(self, interaction: discord.Interaction):
+        cooldown_hours = int(get_setting('applications_cooldown_hours', '24') or 24)
+        cooldown_until = int(time.time()) + cooldown_hours * 3600 if cooldown_hours > 0 else None
+        with get_conn() as conn:
+            row = conn.execute('SELECT * FROM applications WHERE id = ?', (self.app_id,)).fetchone()
+            conn.execute(
+                "UPDATE applications SET status='rejected', reviewed_at=?, reviewer_id=?, reject_reason=?, cooldown_until=? WHERE id=?",
+                (int(time.time()), interaction.user.id, self.reason.value, cooldown_until, self.app_id),
+            )
 
 def get_active_cooldown(user_id: int) -> Optional[int]:
     now = int(time.time())
