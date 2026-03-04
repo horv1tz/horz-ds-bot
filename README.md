@@ -42,6 +42,9 @@ BOT_DB_PATH=family_bot.db
 ADMIN_PANEL_USER=admin
 ADMIN_PANEL_PASS=admin
 ADMIN_PANEL_PORT=5000
+
+# Optional: enable only if privileged intents are enabled in Discord Developer Portal
+ENABLE_PRIVILEGED_INTENTS=false
 ```
 
 ### 3) Запуск
@@ -52,7 +55,7 @@ ADMIN_PANEL_PORT=5000
 python bot.py
 ```
 
-Web UI:
+Web UI (в отдельном терминале):
 
 ```bash
 python admin_panel.py
@@ -68,3 +71,5 @@ python admin_panel.py
 
 - В Discord Modal одновременно доступно до 5 полей — бот использует первые 5 полей формы каждого типа.
 - Все ID в Web UI указываются в формате чисел Discord Snowflake.
+
+- Privileged intents по умолчанию отключены для стабильного запуска. Если включаете `ENABLE_PRIVILEGED_INTENTS=true`, предварительно включите соответствующие intents в Discord Developer Portal.

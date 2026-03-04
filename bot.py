@@ -15,12 +15,21 @@ load_dotenv()
 TOKEN = os.getenv('DISCORD_BOT_TOKEN')
 
 intents = discord.Intents.default()
-intents.message_content = True
+# Keep privileged intents optional to avoid startup failure when they are disabled in Discord Portal.
 intents.guilds = True
-intents.members = True
-intents.presences = True
+
+ENABLE_PRIVILEGED_INTENTS = os.getenv('ENABLE_PRIVILEGED_INTENTS', 'false').strip().lower() == 'true'
+if ENABLE_PRIVILEGED_INTENTS:
+    intents.message_content = True
+    intents.members = True
+    intents.presences = True
 
 bot = commands.Bot(command_prefix='/', intents=intents)
+
+if ENABLE_PRIVILEGED_INTENTS:
+    print('Privileged intents enabled via ENABLE_PRIVILEGED_INTENTS=true')
+else:
+    print('Privileged intents disabled (default)')
 
 STATUS_COLORS = {
     'pending': discord.Color.from_str('#FFC107'),
@@ -53,89 +62,6 @@ def has_pending_application(user_id: int) -> bool:
             (user_id,),
         ).fetchone()
     return row is not None
-
-
-def get_active_cooldown(user_id: int) -> Optional[int]:
-    now = int(time.time())
-    with get_conn() as conn:
-        row = conn.execute(
-            'SELECT cooldown_until FROM applications WHERE user_id = ? AND cooldown_until IS NOT NULL ORDER BY id DESC LIMIT 1',
-            (user_id,),
-        ).fetchone()
-    if row and row['cooldown_until'] and row['cooldown_until'] > now:
-        return row['cooldown_until']
-    return None
-
-
-class DynamicFormModal(discord.ui.Modal):
-    def __init__(self, form_type: str, title: str):
-        super().__init__(title=title)
-        self.form_type = form_type
-        self.field_defs = get_form_fields(form_type)[:5]
-
-        for field in self.field_defs:
-            self.add_item(
-                discord.ui.TextInput(
-                    label=field['label'][:45],
-                    custom_id=field['field_key'],
-                    required=bool(field['required']),
-                    max_length=field['max_length'],
-                    style=discord.TextStyle.short if field['max_length'] <= 120 else discord.TextStyle.paragraph,
-                )
-            )
-
-    async def on_submit(self, interaction: discord.Interaction):
-        if interaction.user.bot:
-            return
-
-        data = {item.custom_id: item.value for item in self.children if isinstance(item, discord.ui.TextInput)}
-
-        if self.form_type == 'application':
-            cooldown_until = get_active_cooldown(interaction.user.id)
-            if cooldown_until:
-                await interaction.response.send_message(
-                    f'Вы на кулдауне до <t:{cooldown_until}:F>.', ephemeral=True
-                )
-                return
-            if has_pending_application(interaction.user.id):
-                await interaction.response.send_message('У вас уже есть активная заявка.', ephemeral=True)
-                return
-
-            await create_application(interaction, data)
-        else:
-            await create_report(interaction, data)
-
-
-class ApplicationActionView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=None)
-
-    async def _is_allowed(self, interaction: discord.Interaction) -> bool:
-        recruiter_role_id = int(get_setting('applications_recruiter_role_id', '0') or 0)
-        member = interaction.user if isinstance(interaction.user, discord.Member) else None
-        if not member:
-            await interaction.response.send_message('Только участники сервера.', ephemeral=True)
-            return False
-        has_recruiter = any(r.id == recruiter_role_id for r in member.roles) if recruiter_role_id else False
-        if not (has_recruiter or member.guild_permissions.administrator):
-            await interaction.response.send_message('Недостаточно прав.', ephemeral=True)
-            return False
-        return True
-
-    @discord.ui.button(label='✅ Принять', style=discord.ButtonStyle.success, custom_id='app_accept')
-    async def accept(self, interaction: discord.Interaction, _: discord.ui.Button):
-        if not await self._is_allowed(interaction):
-            return
-        app_id = int(interaction.message.embeds[0].footer.text.split('|')[1].strip().replace('Application ID: ', ''))
-        with get_conn() as conn:
-            row = conn.execute('SELECT * FROM applications WHERE id = ?', (app_id,)).fetchone()
-            if not row or row['status'] != 'pending':
-                await interaction.response.send_message('Заявка уже обработана.', ephemeral=True)
-                return
-            conn.execute(
-                "UPDATE applications SET status='accepted', reviewed_at=?, reviewer_id=? WHERE id=?",
-                (int(time.time()), interaction.user.id, app_id),
-            )
 
         embed = interaction.message.embeds[0]
         embed.color = STATUS_COLORS['accepted']
@@ -250,12 +176,231 @@ class RejectModal(discord.ui.Modal, title='Причина отказа'):
                 (int(time.time()), interaction.user.id, self.reason.value, cooldown_until, self.app_id),
             )
 
+def get_active_cooldown(user_id: int) -> Optional[int]:
+    now = int(time.time())
+    with get_conn() as conn:
+        row = conn.execute(
+            'SELECT cooldown_until FROM applications WHERE user_id = ? AND cooldown_until IS NOT NULL ORDER BY id DESC LIMIT 1',
+            (user_id,),
+        ).fetchone()
+    if row and row['cooldown_until'] and row['cooldown_until'] > now:
+        return row['cooldown_until']
+    return None
+
+
+async def fetch_member_safe(guild: Optional[discord.Guild], user_id: int) -> Optional[discord.Member]:
+    if guild is None:
+        return None
+
+    member = guild.get_member(user_id)
+    if member is not None:
+        return member
+
+    try:
+        return await guild.fetch_member(user_id)
+    except discord.NotFound:
+        return None
+    except discord.Forbidden:
+        return None
+    except discord.HTTPException:
+        return None
+
+
+class DynamicFormModal(discord.ui.Modal):
+    def __init__(self, form_type: str, title: str):
+        super().__init__(title=title)
+        self.form_type = form_type
+        self.field_defs = get_form_fields(form_type)[:5]
+
+        for field in self.field_defs:
+            self.add_item(
+                discord.ui.TextInput(
+                    label=field['label'][:45],
+                    custom_id=field['field_key'],
+                    required=bool(field['required']),
+                    max_length=field['max_length'],
+                    style=discord.TextStyle.short if field['max_length'] <= 120 else discord.TextStyle.paragraph,
+                )
+            )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        if interaction.user.bot:
+            return
+
+        data = {item.custom_id: item.value for item in self.children if isinstance(item, discord.ui.TextInput)}
+
+        if self.form_type == 'application':
+            cooldown_until = get_active_cooldown(interaction.user.id)
+            if cooldown_until:
+                await interaction.response.send_message(
+                    f'Вы на кулдауне до <t:{cooldown_until}:F>.', ephemeral=True
+                )
+                return
+            if has_pending_application(interaction.user.id):
+                await interaction.response.send_message('У вас уже есть активная заявка.', ephemeral=True)
+                return
+
+            await create_application(interaction, data)
+        else:
+            await create_report(interaction, data)
+
+
+class ApplicationActionView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    async def _is_allowed(self, interaction: discord.Interaction) -> bool:
+        recruiter_role_id = int(get_setting('applications_recruiter_role_id', '0') or 0)
+        member = interaction.user if isinstance(interaction.user, discord.Member) else None
+        if not member:
+            await interaction.response.send_message('Только участники сервера.', ephemeral=True)
+            return False
+        has_recruiter = any(r.id == recruiter_role_id for r in member.roles) if recruiter_role_id else False
+        if not (has_recruiter or member.guild_permissions.administrator):
+            await interaction.response.send_message('Недостаточно прав.', ephemeral=True)
+            return False
+        return True
+
+    @discord.ui.button(label='✅ Принять', style=discord.ButtonStyle.success, custom_id='app_accept')
+    async def accept(self, interaction: discord.Interaction, _: discord.ui.Button):
+        if not await self._is_allowed(interaction):
+            return
+        app_id = int(interaction.message.embeds[0].footer.text.split('|')[1].strip().replace('Application ID: ', ''))
+        with get_conn() as conn:
+            row = conn.execute('SELECT * FROM applications WHERE id = ?', (app_id,)).fetchone()
+            if not row or row['status'] != 'pending':
+                await interaction.response.send_message('Заявка уже обработана.', ephemeral=True)
+                return
+            conn.execute(
+                "UPDATE applications SET status='accepted', reviewed_at=?, reviewer_id=? WHERE id=?",
+                (int(time.time()), interaction.user.id, app_id),
+            )
+
+        embed = interaction.message.embeds[0]
+        embed.color = STATUS_COLORS['accepted']
+        embed.add_field(name='Статус', value=f'Принял: {interaction.user.mention}', inline=False)
+        await interaction.message.edit(embed=embed, view=DisabledView())
+
+        guild = interaction.guild
+        if guild:
+            newbie_role_id = int(get_setting('applications_newbie_role_id', '0') or 0)
+            member = await fetch_member_safe(guild, row['user_id'])
+            if member and newbie_role_id:
+                role = guild.get_role(newbie_role_id)
+                if role:
+                    await member.add_roles(role, reason='Заявка одобрена')
+            if member:
+                await member.send(f'Ваша заявка одобрена! Свяжитесь с рекрутёром {interaction.user.mention}')
+            await log_action(guild, f'✅ {interaction.user.mention} одобрил заявку #{app_id}')
+
+        await interaction.response.send_message('Заявка принята.', ephemeral=True)
+
+    @discord.ui.button(label='❌ Отклонить', style=discord.ButtonStyle.danger, custom_id='app_reject')
+    async def reject(self, interaction: discord.Interaction, _: discord.ui.Button):
+        if not await self._is_allowed(interaction):
+            return
+        app_id = int(interaction.message.embeds[0].footer.text.split('|')[1].strip().replace('Application ID: ', ''))
+        await interaction.response.send_modal(RejectModal(app_id))
+
+    @discord.ui.button(label='📞 Обзвон', style=discord.ButtonStyle.secondary, custom_id='app_call')
+    async def call(self, interaction: discord.Interaction, _: discord.ui.Button):
+        if not await self._is_allowed(interaction):
+            return
+
+        recruiter_role_id = int(get_setting('applications_recruiter_role_id', '0') or 0)
+        voice_ids = get_json_setting('applications_call_voice_channel_ids', [])
+        mentions = []
+        guild = interaction.guild
+
+        if guild and recruiter_role_id:
+            allowed_vc = {int(v) for v in voice_ids if str(v).isdigit()}
+            seen_member_ids = set()
+            for voice_channel_id in allowed_vc:
+                channel = guild.get_channel(voice_channel_id)
+                if not isinstance(channel, discord.VoiceChannel):
+                    continue
+                for member in channel.members:
+                    if member.id in seen_member_ids:
+                        continue
+                    seen_member_ids.add(member.id)
+                    if any(role.id == recruiter_role_id for role in member.roles):
+                        mentions.append(member.mention)
+
+        text = ' '.join(mentions) if mentions else f'<@&{recruiter_role_id}>'
+        await interaction.channel.send(f'{text}, нужен обзвон по заявке.')
+        await interaction.response.send_message('Обзвон отправлен.', ephemeral=True)
+
+
+class ReportActionView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    async def _is_allowed(self, interaction: discord.Interaction) -> bool:
+        role_id = int(get_setting('reports_reviewer_role_id', '0') or 0)
+        member = interaction.user if isinstance(interaction.user, discord.Member) else None
+        if not member:
+            return False
+        return member.guild_permissions.administrator or any(r.id == role_id for r in member.roles)
+
+    @discord.ui.button(label='✅ Принять', style=discord.ButtonStyle.success, custom_id='rep_accept')
+    async def accept(self, interaction: discord.Interaction, _: discord.ui.Button):
+        if not await self._is_allowed(interaction):
+            await interaction.response.send_message('Недостаточно прав.', ephemeral=True)
+            return
+        report_id = int(interaction.message.embeds[0].footer.text.replace('Report ID: ', ''))
+        with get_conn() as conn:
+            row = conn.execute('SELECT * FROM promotion_reports WHERE id = ?', (report_id,)).fetchone()
+            conn.execute(
+                "UPDATE promotion_reports SET status='accepted', reviewed_at=?, reviewer_id=? WHERE id=?",
+                (int(time.time()), interaction.user.id, report_id),
+            )
+        embed = interaction.message.embeds[0]
+        embed.color = STATUS_COLORS['accepted']
+        embed.add_field(name='Статус', value=f'Принял: {interaction.user.mention}', inline=False)
+        await interaction.message.edit(embed=embed, view=DisabledView())
+        member = await fetch_member_safe(interaction.guild, row['user_id'])
+        if member:
+            await member.send('Ваш отчёт на повышение одобрен!')
+        await interaction.response.send_message('Отчёт принят.', ephemeral=True)
+
+    @discord.ui.button(label='❌ Отклонить', style=discord.ButtonStyle.danger, custom_id='rep_reject')
+    async def reject(self, interaction: discord.Interaction, _: discord.ui.Button):
+        if not await self._is_allowed(interaction):
+            await interaction.response.send_message('Недостаточно прав.', ephemeral=True)
+            return
+        report_id = int(interaction.message.embeds[0].footer.text.replace('Report ID: ', ''))
+        await interaction.response.send_modal(ReportRejectModal(report_id))
+
+
+class DisabledView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+        self.add_item(discord.ui.Button(label='Обработано', style=discord.ButtonStyle.secondary, disabled=True))
+
+
+class RejectModal(discord.ui.Modal, title='Причина отказа'):
+    reason = discord.ui.TextInput(label='Причина отказа', max_length=300, required=True, style=discord.TextStyle.paragraph)
+
+    def __init__(self, app_id: int):
+        super().__init__()
+        self.app_id = app_id
+
+    async def on_submit(self, interaction: discord.Interaction):
+        cooldown_hours = int(get_setting('applications_cooldown_hours', '24') or 24)
+        cooldown_until = int(time.time()) + cooldown_hours * 3600 if cooldown_hours > 0 else None
+        with get_conn() as conn:
+            row = conn.execute('SELECT * FROM applications WHERE id = ?', (self.app_id,)).fetchone()
+            conn.execute(
+                "UPDATE applications SET status='rejected', reviewed_at=?, reviewer_id=?, reject_reason=?, cooldown_until=? WHERE id=?",
+                (int(time.time()), interaction.user.id, self.reason.value, cooldown_until, self.app_id),
+            )
+
         embed = interaction.message.embeds[0]
         embed.color = STATUS_COLORS['rejected']
         embed.add_field(name='Статус', value=f'Отклонил: {interaction.user.mention} | Причина: {self.reason.value}', inline=False)
         await interaction.message.edit(embed=embed, view=DisabledView())
 
-        member = interaction.guild.get_member(row['user_id']) if interaction.guild else None
+        member = await fetch_member_safe(interaction.guild, row['user_id'])
         if member:
             await member.send(
                 f'Ваша заявка отклонена. Причина: {self.reason.value}. Вы можете подать повторную заявку через {cooldown_hours} ч.'
@@ -281,7 +426,7 @@ class ReportRejectModal(discord.ui.Modal, title='Причина отклонен
         embed.color = STATUS_COLORS['rejected']
         embed.add_field(name='Статус', value=f'Отклонил: {interaction.user.mention} | Причина: {self.reason.value}', inline=False)
         await interaction.message.edit(embed=embed, view=DisabledView())
-        member = interaction.guild.get_member(row['user_id']) if interaction.guild else None
+        member = await fetch_member_safe(interaction.guild, row['user_id'])
         if member:
             await member.send(f'Ваш отчёт на повышение отклонён. Причина: {self.reason.value}')
         await interaction.response.send_message('Отчёт отклонён.', ephemeral=True)
