@@ -9,6 +9,8 @@ services:
       - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
     env_file:
       - .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./logs:/app/logs
     logging:
