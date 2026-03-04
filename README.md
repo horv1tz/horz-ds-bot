@@ -41,6 +41,7 @@ BOT_DB_PATH=family_bot.db
 # Web UI auth
 ADMIN_PANEL_USER=admin
 ADMIN_PANEL_PASS=admin
+ADMIN_PANEL_HOST=0.0.0.0
 ADMIN_PANEL_PORT=5000
 
 # Optional: enable only if privileged intents are enabled in Discord Developer Portal
@@ -63,7 +64,7 @@ python admin_panel.py
 
 ### 4) Первичная настройка
 
-1. Откройте `http://localhost:5000` и войдите в Web UI.
+1. Откройте `http://<ADMIN_PANEL_HOST>:<ADMIN_PANEL_PORT>` (например, `http://localhost:5000`) и войдите в Web UI.
 2. Заполните ID каналов/ролей.
 3. В Discord выполните `/setup` для публикации кнопок подачи.
 
