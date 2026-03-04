@@ -1,6 +1,6 @@
 import base64
 import os
-from typing import Dict
+from typing import Dict, Tuple
 
 from aiohttp import web
 
@@ -8,10 +8,26 @@ from config import get_setting, set_setting, seed_defaults
 from database import get_conn, init_db
 
 
+def _get_web_panel_credentials() -> Tuple[str, str]:
+    username = os.getenv('ADMIN_PANEL_USER') or os.getenv('ADMIN_USERNAME') or 'admin'
+    password = os.getenv('ADMIN_PANEL_PASS') or os.getenv('ADMIN_PASSWORD') or 'admin'
+    return username, password
+
+
+def get_web_panel_bind() -> Tuple[str, int]:
+    host = os.getenv('ADMIN_PANEL_HOST') or os.getenv('WEB_ADMIN_HOST') or '0.0.0.0'
+    port = int(os.getenv('ADMIN_PANEL_PORT') or os.getenv('WEB_ADMIN_PORT') or '5000')
+    return host, port
+
+
+def is_web_panel_enabled() -> bool:
+    raw = (os.getenv('ENABLE_WEB_ADMIN_PANEL') or 'true').strip().lower()
+    return raw in {'1', 'true', 'yes', 'on'}
+
+
 class SettingsPanel:
     def __init__(self):
-        self.username = os.getenv('ADMIN_PANEL_USER', 'admin')
-        self.password = os.getenv('ADMIN_PANEL_PASS', 'admin')
+        self.username, self.password = _get_web_panel_credentials()
 
     def _authorized(self, request: web.Request) -> bool:
         auth_header = request.headers.get('Authorization', '')
@@ -100,11 +116,8 @@ async def start_background_web_panel() -> web.AppRunner:
     app = create_app()
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(
-        runner,
-        host=os.getenv('ADMIN_PANEL_HOST', '0.0.0.0'),
-        port=int(os.getenv('ADMIN_PANEL_PORT', '5000')),
-    )
+    host, port = get_web_panel_bind()
+    site = web.TCPSite(runner, host=host, port=port)
     await site.start()
     return runner
 
@@ -113,11 +126,8 @@ def main():
     init_db()
     seed_defaults()
     app = create_app()
-    web.run_app(
-        app,
-        host=os.getenv('ADMIN_PANEL_HOST', '0.0.0.0'),
-        port=int(os.getenv('ADMIN_PANEL_PORT', '5000')),
-    )
+    host, port = get_web_panel_bind()
+    web.run_app(app, host=host, port=port)
 
 
 if __name__ == '__main__':

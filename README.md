@@ -38,11 +38,16 @@ pip install -r requirements.txt
 DISCORD_BOT_TOKEN=your_token_here
 BOT_DB_PATH=family_bot.db
 
-# Web UI auth
+# Web UI auth (поддерживаются также ADMIN_USERNAME/ADMIN_PASSWORD)
 ADMIN_PANEL_USER=admin
 ADMIN_PANEL_PASS=admin
+
+# Web UI bind (поддерживаются также WEB_ADMIN_HOST/WEB_ADMIN_PORT)
 ADMIN_PANEL_HOST=0.0.0.0
 ADMIN_PANEL_PORT=5000
+
+# Вкл/выкл автозапуск web-панели вместе с ботом
+ENABLE_WEB_ADMIN_PANEL=true
 
 # Optional: enable only if privileged intents are enabled in Discord Developer Portal
 ENABLE_PRIVILEGED_INTENTS=false
@@ -66,7 +71,7 @@ python admin_panel.py
 
 ### 4) Первичная настройка
 
-1. Откройте `http://<ADMIN_PANEL_HOST>:<ADMIN_PANEL_PORT>` (например, `http://localhost:5000`) и войдите в Web UI.
+1. Откройте `http://<ADMIN_PANEL_HOST>:<ADMIN_PANEL_PORT>` (или `WEB_ADMIN_HOST/WEB_ADMIN_PORT` в docker-compose), например `http://localhost:5000`, и войдите в Web UI.
 2. Заполните ID каналов/ролей.
 3. В Discord выполните `/setup` для публикации кнопок подачи.
 
