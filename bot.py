@@ -15,6 +15,7 @@ load_dotenv()
 TOKEN = os.getenv('DISCORD_BOT_TOKEN')
 
 intents = discord.Intents.default()
+# Keep privileged intents optional to avoid startup failure when they are disabled in Discord Portal.
 intents.guilds = True
 
 ENABLE_PRIVILEGED_INTENTS = os.getenv('ENABLE_PRIVILEGED_INTENTS', 'false').strip().lower() == 'true'

@@ -72,5 +72,4 @@ python admin_panel.py
 - В Discord Modal одновременно доступно до 5 полей — бот использует первые 5 полей формы каждого типа.
 - Все ID в Web UI указываются в формате чисел Discord Snowflake.
 
-
 - Privileged intents по умолчанию отключены для стабильного запуска. Если включаете `ENABLE_PRIVILEGED_INTENTS=true`, предварительно включите соответствующие intents в Discord Developer Portal.
