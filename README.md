@@ -1,296 +1,70 @@
-# Simple Discord Bot - "Hello World" Bot
+# Family Bot — Majestic RP (MVP)
 
-A basic Discord bot that responds with "Hello World" when triggered by a specific command. This project serves as an introductory example for Discord bot development.
+Discord-бот для семейной фракции: заявки на вступление, рассмотрение рекрутёрами, отчёты на повышение и Web UI для настройки.
 
-## Features
+## Что реализовано
 
-- Responds to `/hello` command with "Hello World" message
-- Simple `/ping` command for testing bot responsiveness
-- Clean, well-documented code structure
-- Easy setup and deployment
-- Built-in Web Admin panel for monitoring and quick bot actions
+- Подача заявки через кнопку + Modal.
+- Проверка: одна активная заявка на пользователя.
+- Кулдаун после отклонения (по умолчанию 24 часа, меняется в Web UI).
+- Канал рассмотрения с кнопками `✅ Принять`, `❌ Отклонить`, `📞 Обзвон`.
+- ЛС-уведомления заявителю по итогам рассмотрения.
+- Автовыдача роли новобранца при принятии заявки.
+- Подача отчёта на повышение через кнопку + Modal.
+- Рассмотрение отчётов с кнопками принятия/отклонения.
+- Slash-команды: `/setup`, `/ping`, `/заявки_список`, `/кулдаун_снять`.
+- Отдельный Web UI для настройки каналов, ролей и полей форм.
 
-## Requirements
+## Стек
 
-- Python 3.8 or higher
-- Discord account with server administrator permissions
-- Access to [Discord Developer Portal](https://discord.com/developers/applications)
+- Python 3.11+
+- discord.py 2.x
+- SQLite
+- aiohttp (Web UI)
 
-## Installation
+## Быстрый старт
 
-1. **Clone or download this repository**
-   ```bash
-   git clone <repository-url>
-   cd horz-ds-bot
-   ```
+### 1) Установка
 
-2. **Install dependencies**
-   ```bash
-   pip install -r requirements.txt
-   ```
+```bash
+pip install -r requirements.txt
+```
 
-3. **Set up your Discord bot**
-   - Go to [Discord Developer Portal](https://discord.com/developers/applications)
-   - Create a new application
-   - Go to the "Bot" section and click "Add Bot"
-   - Copy the bot token
+### 2) Переменные окружения
 
-4. **Configure the bot**
-   - Copy `.env.example` to `.env`
-   - Edit `.env` and replace `your_bot_token_here` with your actual bot token
-   ```
-   DISCORD_BOT_TOKEN=your_actual_bot_token_here
-   BOT_INSTANCE_NAME=bot-dev-1
-   # Optional: ensure only one bot process per host/container
-   ENABLE_SINGLE_INSTANCE_LOCK=true
-   ```
-
-5. **Invite the bot to your server**
-   - In the Discord Developer Portal, go to "OAuth2" > "URL Generator"
-   - Select the "bot" scope
-   - Select necessary permissions (at minimum: Send Messages)
-   - Copy the generated URL and open it in your browser
-   - Select your server and authorize the bot
-
-## Usage
-
-1. **Start the bot**
-   ```bash
-   python bot.py
-   ```
-
-2. **Use the bot commands**
-   - `/hello` - Bot responds with "Hello World"
-   - `/ping` - Bot responds with "Pong! The bot is working correctly."
-
-## Commands
-
-### `/hello`
-Responds with "Hello World" message.
-
-**Usage:** `/hello`
-
-### `/ping`
-Simple ping command to test bot responsiveness.
-
-**Usage:** `/ping`
-
-
-## Web Admin Panel
-
-The bot now includes an embedded Web Admin panel (aiohttp) that runs in parallel with the Discord process.
-
-### What you can do
-- View runtime status: instance, PID, connection state, guild count, handled commands, last error
-- Send a message to a Discord channel by channel ID
-- Update bot presence text
-
-### Security
-The panel is protected with HTTP Basic Authentication. Configure credentials in `.env`:
+Создайте `.env`:
 
 ```env
-ENABLE_WEB_ADMIN_PANEL=true
-WEB_ADMIN_HOST=0.0.0.0
-WEB_ADMIN_PORT=8080
-ADMIN_USERNAME=admin
-ADMIN_PASSWORD=change_me
+DISCORD_BOT_TOKEN=your_token_here
+BOT_DB_PATH=family_bot.db
+
+# Web UI auth
+ADMIN_PANEL_USER=admin
+ADMIN_PANEL_PASS=admin
+ADMIN_PANEL_PORT=5000
 ```
 
-After bot startup, open:
+### 3) Запуск
 
+Бот:
+
+```bash
+python bot.py
 ```
-http://localhost:8080
+
+Web UI:
+
+```bash
+python admin_panel.py
 ```
 
-For Docker Compose, port `8080` is already published by default.
+### 4) Первичная настройка
 
-## Troubleshooting
+1. Откройте `http://localhost:5000` и войдите в Web UI.
+2. Заполните ID каналов/ролей.
+3. В Discord выполните `/setup` для публикации кнопок подачи.
 
-### Bot won't start
-- Ensure you have Python 3.8+ installed
-- Check that all dependencies are installed: `pip install -r requirements.txt`
-- Verify your bot token is correct in the `.env` file
+## Замечания
 
-### Bot doesn't respond to commands
-- Make sure the bot has been invited to your server with proper permissions
-- Check that the bot is online in your server's member list
-- Verify the command prefix is `/` (you can change this in `bot.py`)
-
-
-### Troubleshooting duplicate replies
-
-If the bot sends duplicate responses, the most common reason is multiple running processes using the same `DISCORD_BOT_TOKEN`.
-
-1. **Check bot startup logs**
-   - On startup and `on_ready`, the bot now logs: instance name (`BOT_INSTANCE_NAME`), PID, bot user ID, guild count, and timestamp.
-   - Compare logs from all hosts/containers and verify only one active process reports successful connection.
-
-2. **Check local processes**
-   ```bash
-   ps -ef | grep "python bot.py" | grep -v grep
-   ```
-
-3. **Check Docker containers**
-   ```bash
-   docker ps --format "table {{.Names}}\t{{.Status}}"
-   docker compose ps
-   docker compose logs -f
-   ```
-   Ensure only one bot container is running for the same token/environment.
-
-4. **Check systemd services**
-   ```bash
-   systemctl list-units --type=service | grep -i bot
-   systemctl status <your-bot-service>
-   journalctl -u <your-bot-service> -f
-   ```
-
-5. **Check CI/CD and second hosts**
-   - Verify CI is not launching temporary bot jobs with production token.
-   - Verify there is no second VM/host/container cluster using the same token.
-
-6. **Use the optional single-instance lock**
-   - Set `ENABLE_SINGLE_INSTANCE_LOCK=true` (default in `docker-compose.yml`).
-   - A second process on the same host exits with a clear message instead of connecting.
-
-### Common errors
-- **"CommandNotFound"**: Bot didn't recognize the command. Try `/hello` or `/ping`
-- **"Token not found"**: Check your `.env` file contains the correct bot token
-
-## Development
-
-This bot is built using:
-- [discord.py](https://discordpy.readthedocs.io/) - Discord API wrapper for Python
-- [python-dotenv](https://pypi.org/project/python-dotenv/) - Environment variable management
-
-## Future Enhancements
-
-This basic bot can be extended with additional features such as:
-- More commands and responses
-- Database integration for persistent data
-- Web dashboard for bot management
-- Advanced moderation features
-
-## License
-
-This project is for educational purposes and can be used as a foundation for more complex Discord bot implementations.
-
-## Docker Deployment
-
-The bot can also be deployed using Docker for easier containerization and deployment.
-
-### Prerequisites
-- Docker installed on your system
-- Docker Compose (if using docker-compose)
-
-### Using Docker Compose (Recommended)
-
-1. **Build and run the container**
-   ```bash
-   docker-compose up -d
-   ```
-
-2. **View logs**
-   ```bash
-   docker-compose logs -f
-   ```
-
-3. **Stop the container**
-   ```bash
-   docker-compose down
-   ```
-
-
-### Single-instance deployment note
-
-When deploying with Docker Compose/systemd/CI, make sure exactly one runtime process is started per token:
-- **Docker Compose**: run a single service instance (`docker compose up -d --scale horz-ds-bot=1`).
-- **systemd**: define exactly one unit for this bot token and avoid duplicate templated units.
-- **CI/CD**: do not run long-lived bot jobs in parallel with production deployment.
-
-### Proxy Configuration
-
-If you need to use a proxy to connect to Discord (required in some networks):
-
-1. **Configure proxy in `.env` file**:
-   ```bash
-   # Basic HTTP proxy URL
-   PROXY_URL=http://proxy_host:proxy_port
-
-   # SOCKS5 proxy (often used by local proxy apps)
-   PROXY_URL=socks5://127.0.0.1:1080
-
-   # Option A: credentials in URL
-   PROXY_URL=http://username:password@proxy_host:proxy_port
-
-   # Option B (recommended): credentials in separate variables
-   PROXY_URL=http://proxy_host:proxy_port
-   PROXY_USERNAME=your_proxy_username
-   PROXY_PASSWORD=your_proxy_password
-   ```
-
-   You can also use standard proxy env vars instead of `PROXY_URL`:
-   `HTTPS_PROXY`, `HTTP_PROXY`, or `ALL_PROXY`.
-
-   **Docker loopback gotcha:** inside a container, `127.0.0.1` / `localhost`
-   points to the container itself (not your host). If your proxy runs on your host
-   machine, use a reachable host such as:
-   ```bash
-   PROXY_URL=socks5://host.docker.internal:1080
-   ```
-   You can set `STRICT_PROXY_CHECK=true` to make the bot fail fast when it detects
-   a loopback proxy host in a containerized environment.
-
-   If you see an error like `Unsupported method ('CONNECT')`, you likely configured
-   an HTTP proxy URL for a SOCKS port. In that case, use `socks5://...` in `PROXY_URL`.
-
-2. **Restart the bot**:
-   ```bash
-   docker-compose down
-   docker-compose up -d
-   ```
-
-3. **Verify proxy usage**:
-   Check the logs to confirm the bot is using the proxy:
-   ```bash
-   docker-compose logs -f
-   # Should show: "Using proxy: http://your_proxy_url:port"
-   ```
-
-### Using Docker Directly
-
-1. **Build the image**
-   ```bash
-   docker build -t horz-ds-bot .
-   ```
-
-2. **Run the container**
-   ```bash
-   docker run -d \
-     --name horz-ds-bot \
-     --restart unless-stopped \
-     -e DISCORD_BOT_TOKEN=your_bot_token_here \
-     horz-ds-bot
-   ```
-
-3. **View logs**
-   ```bash
-   docker logs -f horz-ds-bot
-   ```
-
-4. **Stop the container**
-   ```bash
-   docker stop horz-ds-bot
-   docker rm horz-ds-bot
-   ```
-
-### Docker Configuration Notes
-
-- The bot token can be provided via `.env` file or environment variable
-- Logs are stored in the `/app/logs` directory inside the container
-- The container will automatically restart unless manually stopped
-- Health checks are configured to monitor bot status
-
-## Support
-
-For setup and configuration issues, refer to the troubleshooting section above. For additional Discord bot development resources, see the [discord.py documentation](https://discordpy.readthedocs.io/).
+- В Discord Modal одновременно доступно до 5 полей — бот использует первые 5 полей формы каждого типа.
+- Все ID в Web UI указываются в формате чисел Discord Snowflake.
