@@ -88,13 +88,31 @@ class SettingsPanel:
         raise web.HTTPFound('/')
 
 
-def main():
-    init_db()
-    seed_defaults()
+def create_app() -> web.Application:
     app = web.Application()
     panel = SettingsPanel()
     app.router.add_get('/', panel.index)
     app.router.add_post('/save', panel.save)
+    return app
+
+
+async def start_background_web_panel() -> web.AppRunner:
+    app = create_app()
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(
+        runner,
+        host=os.getenv('ADMIN_PANEL_HOST', '0.0.0.0'),
+        port=int(os.getenv('ADMIN_PANEL_PORT', '5000')),
+    )
+    await site.start()
+    return runner
+
+
+def main():
+    init_db()
+    seed_defaults()
+    app = create_app()
     web.run_app(
         app,
         host=os.getenv('ADMIN_PANEL_HOST', '0.0.0.0'),
