@@ -134,13 +134,28 @@ The bot can also be deployed using Docker for easier containerization and deploy
 
 If you need to use a proxy to connect to Discord (required in some networks):
 
-1. **Configure proxy in .env file**:
+1. **Configure proxy in `.env` file**:
    ```bash
-   # Add your proxy configuration to .env
-   PROXY_URL=http://your_proxy_url:port
-   # Or with authentication:
-   PROXY_URL=http://username:password@proxy_host:port
+   # Basic HTTP proxy URL
+   PROXY_URL=http://proxy_host:proxy_port
+
+   # SOCKS5 proxy (often used by local proxy apps)
+   PROXY_URL=socks5://127.0.0.1:1080
+
+   # Option A: credentials in URL
+   PROXY_URL=http://username:password@proxy_host:proxy_port
+
+   # Option B (recommended): credentials in separate variables
+   PROXY_URL=http://proxy_host:proxy_port
+   PROXY_USERNAME=your_proxy_username
+   PROXY_PASSWORD=your_proxy_password
    ```
+
+   You can also use standard proxy env vars instead of `PROXY_URL`:
+   `HTTPS_PROXY`, `HTTP_PROXY`, or `ALL_PROXY`.
+
+   If you see an error like `Unsupported method ('CONNECT')`, you likely configured
+   an HTTP proxy URL for a SOCKS port. In that case, use `socks5://...` in `PROXY_URL`.
 
 2. **Restart the bot**:
    ```bash
