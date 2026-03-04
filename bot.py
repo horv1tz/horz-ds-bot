@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 
 from config import get_json_setting, get_setting, seed_defaults
 from database import get_conn, init_db
+from admin_panel import get_web_panel_bind, is_web_panel_enabled, start_background_web_panel
 
 load_dotenv()
 TOKEN = os.getenv('DISCORD_BOT_TOKEN')
@@ -395,6 +396,14 @@ async def create_report(interaction: discord.Interaction, data: Dict[str, str]):
 
 @bot.event
 async def on_ready():
+    if is_web_panel_enabled() and not getattr(bot, 'admin_panel_runner', None):
+        try:
+            bot.admin_panel_runner = await start_background_web_panel()
+            host, port = get_web_panel_bind()
+            print(f'Admin panel started on http://{host}:{port}')
+        except Exception as err:
+            print(f'Admin panel start error: {err}')
+
     bot.add_view(ApplicationActionView())
     bot.add_view(ReportActionView())
     bot.add_view(OpenFormView('application', 'Подать заявку'))
