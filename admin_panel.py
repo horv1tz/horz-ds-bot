@@ -95,7 +95,11 @@ def main():
     panel = SettingsPanel()
     app.router.add_get('/', panel.index)
     app.router.add_post('/save', panel.save)
-    web.run_app(app, host='0.0.0.0', port=int(os.getenv('ADMIN_PANEL_PORT', '5000')))
+    web.run_app(
+        app,
+        host=os.getenv('ADMIN_PANEL_HOST', '0.0.0.0'),
+        port=int(os.getenv('ADMIN_PANEL_PORT', '5000')),
+    )
 
 
 if __name__ == '__main__':
