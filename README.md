@@ -49,6 +49,13 @@ ENABLE_PRIVILEGED_INTENTS=false
 
 ### 3) Запуск
 
+### Быстрая команда запуска
+
+```bash
+python bot.py
+```
+
+
 Бот:
 
 ```bash

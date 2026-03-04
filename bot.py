@@ -25,6 +25,11 @@ if ENABLE_PRIVILEGED_INTENTS:
 
 bot = commands.Bot(command_prefix='/', intents=intents)
 
+if ENABLE_PRIVILEGED_INTENTS:
+    print('Privileged intents enabled via ENABLE_PRIVILEGED_INTENTS=true')
+else:
+    print('Privileged intents disabled (default)')
+
 STATUS_COLORS = {
     'pending': discord.Color.from_str('#FFC107'),
     'accepted': discord.Color.from_str('#22C55E'),
