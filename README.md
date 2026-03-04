@@ -154,6 +154,15 @@ If you need to use a proxy to connect to Discord (required in some networks):
    You can also use standard proxy env vars instead of `PROXY_URL`:
    `HTTPS_PROXY`, `HTTP_PROXY`, or `ALL_PROXY`.
 
+   **Docker loopback gotcha:** inside a container, `127.0.0.1` / `localhost`
+   points to the container itself (not your host). If your proxy runs on your host
+   machine, use a reachable host such as:
+   ```bash
+   PROXY_URL=socks5://host.docker.internal:1080
+   ```
+   You can set `STRICT_PROXY_CHECK=true` to make the bot fail fast when it detects
+   a loopback proxy host in a containerized environment.
+
    If you see an error like `Unsupported method ('CONNECT')`, you likely configured
    an HTTP proxy URL for a SOCKS port. In that case, use `socks5://...` in `PROXY_URL`.
 
