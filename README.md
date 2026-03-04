@@ -49,20 +49,13 @@ ENABLE_PRIVILEGED_INTENTS=false
 
 ### 3) Запуск
 
-### Быстрая команда запуска
-
-```bash
-python bot.py
-```
-
-
 Бот:
 
 ```bash
 python bot.py
 ```
 
-Web UI:
+Web UI (в отдельном терминале):
 
 ```bash
 python admin_panel.py
