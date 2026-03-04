@@ -1,5 +1,5 @@
 import os
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 from urllib.parse import quote, unquote, urlsplit, urlunsplit
 
 import aiohttp
@@ -18,13 +18,34 @@ if not TOKEN:
     print("Please create a .env file with your bot token.")
     exit(1)
 
+PROXY_ENV_PRIORITY = ('PROXY_URL', 'HTTPS_PROXY', 'HTTP_PROXY', 'ALL_PROXY')
+
+
+def resolve_proxy_url_from_env() -> Tuple[Optional[str], Optional[str]]:
+    """Return the first configured proxy env var and its value."""
+    for env_var in PROXY_ENV_PRIORITY:
+        value = os.getenv(env_var)
+        if value:
+            return env_var, value
+    return None, None
+
+
+def is_containerized_environment() -> bool:
+    """Best-effort container detection for Docker/Kubernetes style environments."""
+    if os.path.exists('/.dockerenv'):
+        return True
+    return os.getenv('KUBERNETES_SERVICE_HOST') is not None
+
+
+def is_loopback_host(hostname: Optional[str]) -> bool:
+    """Return True when hostname points to local loopback within this network namespace."""
+    if not hostname:
+        return False
+    return hostname.lower() in {'127.0.0.1', 'localhost', '::1'}
+
+
 # Get proxy settings from environment variables
-PROXY_URL = (
-    os.getenv('PROXY_URL')
-    or os.getenv('HTTPS_PROXY')
-    or os.getenv('HTTP_PROXY')
-    or os.getenv('ALL_PROXY')
-)
+PROXY_ENV_SOURCE, PROXY_URL = resolve_proxy_url_from_env()
 
 
 HTTP_PROXY_SCHEMES = {'http', 'https'}
@@ -117,7 +138,27 @@ intents.message_content = True
 
 proxy_options = get_proxy_options(PROXY_URL)
 if proxy_options:
+    print(f"Proxy source env var: {PROXY_ENV_SOURCE}")
     print(f"Using proxy: {proxy_options['proxy_display']}")
+
+    parsed_proxy = urlsplit(PROXY_URL or '')
+    if is_containerized_environment() and is_loopback_host(parsed_proxy.hostname):
+        warning_message = (
+            "\n"
+            "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n"
+            "WARNING: Proxy host is set to localhost/127.0.0.1 in a containerized environment.\n"
+            "In Docker, loopback points to THIS container, not your host machine.\n"
+            "Use a reachable host/IP (for example host.docker.internal on Docker Desktop)\n"
+            "or run the proxy in the same container/network namespace.\n"
+            "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+        )
+        print(warning_message)
+
+        if os.getenv('STRICT_PROXY_CHECK', '').strip().lower() == 'true':
+            raise RuntimeError(
+                "STRICT_PROXY_CHECK=true and loopback proxy detected in container. "
+                "Update PROXY_URL to a non-loopback host (e.g. host.docker.internal)."
+            )
 else:
     print("No proxy configured")
 
